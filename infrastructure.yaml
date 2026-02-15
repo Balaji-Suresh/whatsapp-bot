@@ -1,0 +1,97 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'WhatsApp Bot Infrastructure'
+
+Parameters:
+  BucketName:
+    Type: String
+    Default: whatsapp-bot-bucket
+    Description: S3 bucket name for storing files
+
+Resources:
+  WhatsAppBotBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub '${BucketName}-${AWS::AccountId}'
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      
+  WhatsAppBotRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Policies:
+        - PolicyName: WhatsAppBotPolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - s3:GetObject
+                  - s3:PutObject
+                  - s3:ListBucket
+                Resource: 
+                  - !Sub '${WhatsAppBotBucket}/*'
+                  - !GetAtt WhatsAppBotBucket.Arn
+                
+  WhatsAppBotFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: whatsapp-bot
+      Runtime: python3.9
+      Handler: lambda_function.lambda_handler
+      Role: !GetAtt WhatsAppBotRole.Arn
+      Code:
+        ZipFile: |
+          def lambda_handler(event, context):
+              return {'statusCode': 200, 'body': 'Placeholder - update with actual code'}
+      Environment:
+        Variables:
+          S3_BUCKET: !Ref WhatsAppBotBucket
+      Timeout: 900
+      MemorySize: 1024
+      Layers:
+        - arn:aws:lambda:us-east-1:764866452798:layer:chrome-aws-lambda:31
+      
+  ScheduleRule:
+    Type: AWS::Events::Rule
+    Properties:
+      Name: WhatsAppBotSchedule
+      Description: "Trigger WhatsApp bot daily"
+      ScheduleExpression: "cron(0 9 * * ? *)"
+      State: DISABLED
+      Targets:
+        - Arn: !GetAtt WhatsAppBotFunction.Arn
+          Id: "WhatsAppBotTarget"
+          Input: '{"excel_file": "contacts.xlsx"}'
+          
+  LambdaInvokePermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName: !Ref WhatsAppBotFunction
+      Principal: events.amazonaws.com
+      SourceArn: !GetAtt ScheduleRule.Arn
+
+Outputs:
+  BucketName:
+    Description: S3 Bucket Name
+    Value: !Ref WhatsAppBotBucket
+    Export:
+      Name: !Sub '${AWS::StackName}-BucketName'
+      
+  FunctionName:
+    Description: Lambda Function Name
+    Value: !Ref WhatsAppBotFunction
+    Export:
+      Name: !Sub '${AWS::StackName}-FunctionName'
